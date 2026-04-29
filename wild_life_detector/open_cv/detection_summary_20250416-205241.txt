@@ -1,0 +1,7 @@
+Detection Summary:
+red: 4 (Avg Confidence: 0.77)
+grey: 6 (Avg Confidence: 0.64)
+marten: 5 (Avg Confidence: 0.62)
+
+Total Runtime: 68.40s
+Average FPS: 9.11

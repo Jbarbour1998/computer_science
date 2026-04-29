@@ -1,0 +1,4 @@
+Class,Detections,Avg Confidence,Avg FPS,Total Frames,Total Time
+grey,26,0.75,8.96,2191,244.41
+marten,9,0.71,8.96,2191,244.41
+red,24,0.80,8.96,2191,244.41

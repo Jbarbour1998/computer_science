@@ -1,0 +1,20 @@
+{
+    "detection_cooldown": 3.0,
+    "confidence_threshold": 0.45,
+    "nms_threshold": 0.2,
+    "target_objects": [
+        "dog",
+        "cup"
+    ],
+    "model_paths": {
+        "class_file": "C:/Users/jorda/OneDrive/Computer Science 3rd Year/Final Year Project/Open CV code/object_detection/coco.names",
+        "config_path": "C:/Users/jorda/OneDrive/Computer Science 3rd Year/Final Year Project/Open CV code/object_detection/ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt",
+        "weights_path": "C:/Users/jorda/OneDrive/Computer Science 3rd Year/Final Year Project/Open CV code/object_detection/frozen_inference_graph.pb"
+    },
+    "display": {
+        "show_stats": true,
+        "font_scale": 0.7,
+        "font_thickness": 2,
+        "box_thickness": 2
+    }
+}

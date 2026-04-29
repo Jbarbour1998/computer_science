@@ -1,0 +1,9 @@
+Detection Statistics:
+grey: 4
+red: 5
+
+Performance Metrics:
+Total Frames: 1069
+Total Runtime: 124.02 seconds
+Average FPS: 8.62
+Average Detection Confidence: 0.74
