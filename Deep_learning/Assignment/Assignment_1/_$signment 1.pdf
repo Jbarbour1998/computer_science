@@ -1,0 +1,451 @@
+# %%
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+from typing import Dict, Tuple, List
+import itertools
+from copy import deepcopy
+
+class ModelConfig:
+    def __init__(self, input_size=None, hidden_size=5, output_size=1, 
+                 learning_rate=0.01, batch_size=128, epochs=500, random_seed=42):
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.random_seed = random_seed
+
+class NeuralNetwork:
+    def __init__(self, config: ModelConfig):
+        self.config = config
+        self.parameters = self._initialize_parameters()
+        self.training_history = {
+            'train_loss': [], 'train_accuracy': [],
+            'test_loss': [], 'test_accuracy': [],
+            'train_sensitivity': [], 'train_specificity': [],
+            'test_sensitivity': [], 'test_specificity': []
+        }
+    
+    def _initialize_parameters(self) -> Dict[str, np.ndarray]:
+        np.random.seed(self.config.random_seed)
+        w1_std = np.sqrt(2.0 / (self.config.input_size + self.config.hidden_size))
+        w2_std = np.sqrt(2.0 / (self.config.hidden_size + self.config.output_size))
+        
+        return {
+            'W1': np.random.normal(0, w1_std, (self.config.hidden_size, self.config.input_size)),
+            'b1': np.zeros((self.config.hidden_size, 1)),
+            'W2': np.random.normal(0, w2_std, (self.config.output_size, self.config.hidden_size)),
+            'b2': np.zeros((self.config.output_size, 1))
+        }
+    
+    def sigmoid(self, Z: np.ndarray) -> np.ndarray:
+        return 1 / (1 + np.exp(-np.clip(Z, -500, 500)))
+    
+    def forward_propagation(self, X: np.ndarray) -> Dict[str, np.ndarray]:
+        Z1 = np.dot(self.parameters['W1'], X.T) + self.parameters['b1']
+        A1 = self.sigmoid(Z1)
+        Z2 = np.dot(self.parameters['W2'], A1) + self.parameters['b2']
+        A2 = self.sigmoid(Z2)
+        return {'Z1': Z1, 'A1': A1, 'Z2': Z2, 'A2': A2}
+    
+    def backward_propagation(self, X: np.ndarray, Y: np.ndarray, 
+                           cache: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        m = X.shape[0]
+        dZ2 = cache['A2'] - Y.T
+        dW2 = (1/m) * np.dot(dZ2, cache['A1'].T)
+        db2 = (1/m) * np.sum(dZ2, axis=1, keepdims=True)
+        
+        dZ1 = np.dot(self.parameters['W2'].T, dZ2) * (cache['A1'] * (1 - cache['A1']))
+        dW1 = (1/m) * np.dot(dZ1, X)
+        db1 = (1/m) * np.sum(dZ1, axis=1, keepdims=True)
+        
+        return {'dW1': dW1, 'db1': db1, 'dW2': dW2, 'db2': db2}
+    
+    def compute_loss(self, A2: np.ndarray, Y: np.ndarray) -> float:
+        epsilon = 1e-15
+        return -np.mean(Y.T * np.log(A2 + epsilon) + (1 - Y.T) * np.log(1 - A2 + epsilon))
+    
+    def evaluate_metrics(self, X: np.ndarray, Y: np.ndarray) -> Dict[str, float]:
+        cache = self.forward_propagation(X)
+        predictions = (cache['A2'] > 0.5).astype(int).T
+        
+        accuracy = np.mean(predictions == Y)
+        
+        true_positives = np.sum((predictions == 1) & (Y == 1))
+        true_negatives = np.sum((predictions == 0) & (Y == 0))
+        actual_positives = np.sum(Y == 1)
+        actual_negatives = np.sum(Y == 0)
+        
+        sensitivity = true_positives / actual_positives if actual_positives > 0 else 0
+        specificity = true_negatives / actual_negatives if actual_negatives > 0 else 0
+        loss = self.compute_loss(cache['A2'], Y)
+        
+        return {
+            'accuracy': accuracy,
+            'sensitivity': sensitivity,
+            'specificity': specificity,
+            'loss': loss
+        }
+    
+    def train(self, X_train: np.ndarray, Y_train: np.ndarray, 
+              X_test: np.ndarray, Y_test: np.ndarray) -> None:
+        m = X_train.shape[0]
+        
+        for epoch in range(self.config.epochs):
+            # Mini-batch training
+            permutation = np.random.permutation(m)
+            X_shuffled = X_train[permutation]
+            Y_shuffled = Y_train[permutation]
+            
+            for i in range(0, m, self.config.batch_size):
+                batch_X = X_shuffled[i:i + self.config.batch_size]
+                batch_Y = Y_shuffled[i:i + self.config.batch_size]
+                
+                cache = self.forward_propagation(batch_X)
+                gradients = self.backward_propagation(batch_X, batch_Y, cache)
+                
+                # Update parameters
+                for param in ['W1', 'b1', 'W2', 'b2']:
+                    self.parameters[param] -= self.config.learning_rate * gradients[f'd{param}']
+            
+            # Store metrics
+            train_metrics = self.evaluate_metrics(X_train, Y_train)
+            test_metrics = self.evaluate_metrics(X_test, Y_test)
+            
+            for metric in ['loss', 'accuracy', 'sensitivity', 'specificity']:
+                self.training_history[f'train_{metric}'].append(train_metrics[metric])
+                self.training_history[f'test_{metric}'].append(test_metrics[metric])
+            
+            if epoch % 100 == 0:
+                print(f"Epoch {epoch}/{self.config.epochs}")
+                print(f"Test Accuracy: {test_metrics['accuracy']:.4f}")
+
+class ModelOptimizer:
+    def __init__(self, base_config: ModelConfig):
+        self.base_config = base_config
+        self.results = []
+    
+    def generate_configs(self, param_grid: Dict[str, List]) -> List[ModelConfig]:
+        configs = []
+        keys = param_grid.keys()
+        values = param_grid.values()
+        
+        for instance in itertools.product(*values):
+            config = deepcopy(self.base_config)
+            for key, value in zip(keys, instance):
+                setattr(config, key, value)
+            configs.append(config)
+        
+        return configs
+    
+    def train_and_evaluate(self, configs: List[ModelConfig], 
+                          x_train: np.ndarray, y_train: np.ndarray,
+                          x_test: np.ndarray, y_test: np.ndarray) -> pd.DataFrame:
+        for idx, config in enumerate(configs):
+            print(f"\nTraining configuration {idx + 1}/{len(configs)}:")
+            print(f"Hidden size: {config.hidden_size}")
+            print(f"Learning rate: {config.learning_rate}")
+            print(f"Batch size: {config.batch_size}")
+            
+            model = NeuralNetwork(config)
+            model.train(x_train, y_train, x_test, y_test)
+            
+            result = {
+                'hidden_size': config.hidden_size,
+                'learning_rate': config.learning_rate,
+                'batch_size': config.batch_size,
+                **{k: v[-1] for k, v in model.training_history.items()}
+            }
+            self.results.append(result)
+        
+        return pd.DataFrame(self.results)
+
+# 
+
+##############
+class Visualizer:
+    @staticmethod
+    def plot_optimization_results(results_df: pd.DataFrame):
+        """Enhanced visualization including all hyperparameters"""
+        # Parameters to analyze
+        params = ['hidden_size', 'learning_rate', 'batch_size', 'epochs']
+        metrics = ['accuracy', 'sensitivity', 'specificity']
+        
+        # Create subplots for each parameter-metric combination
+        fig, axes = plt.subplots(len(metrics), len(params), figsize=(20, 15))
+        
+        for i, metric in enumerate(metrics):
+            for j, param in enumerate(params):
+                ax = axes[i, j]
+                
+                # For learning rate plots
+                if param == 'learning_rate':
+                    for batch in results_df['batch_size'].unique():
+                        mask = results_df['batch_size'] == batch
+                        ax.scatter(results_df[mask][param], 
+                                 results_df[mask][f'test_{metric}'],
+                                 label=f'batch={batch}')
+                # For other parameters
+                else:
+                    for lr in results_df['learning_rate'].unique():
+                        mask = results_df['learning_rate'] == lr
+                        ax.scatter(results_df[mask][param], 
+                                 results_df[mask][f'test_{metric}'],
+                                 label=f'lr={lr}')
+                
+                ax.set_xlabel(param)
+                ax.set_ylabel(f'Test {metric.capitalize()}')
+                ax.set_title(f'{metric.capitalize()} vs {param}')
+                ax.legend()
+                ax.grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+    
+    @staticmethod
+    def plot_best_model_history(model):
+        """Plot training history for the best model"""
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+        
+        # Plot loss
+        ax1.plot(model.training_history['train_loss'], label='Train')
+        ax1.plot(model.training_history['test_loss'], label='Test')
+        ax1.set_title('Loss Over Time')
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Loss')
+        ax1.legend()
+        ax1.grid(True)
+        
+        # Plot accuracy
+        ax2.plot(model.training_history['train_accuracy'], label='Train')
+        ax2.plot(model.training_history['test_accuracy'], label='Test')
+        ax2.set_title('Accuracy Over Time')
+        ax2.set_xlabel('Epoch')
+        ax2.set_ylabel('Accuracy')
+        ax2.legend()
+        ax2.grid(True)
+        
+        # Plot sensitivity
+        ax3.plot(model.training_history['train_sensitivity'], label='Train')
+        ax3.plot(model.training_history['test_sensitivity'], label='Test')
+        ax3.set_title('Sensitivity Over Time')
+        ax3.set_xlabel('Epoch')
+        ax3.set_ylabel('Sensitivity')
+        ax3.legend()
+        ax3.grid(True)
+        
+        # Plot specificity
+        ax4.plot(model.training_history['train_specificity'], label='Train')
+        ax4.plot(model.training_history['test_specificity'], label='Test')
+        ax4.set_title('Specificity Over Time')
+        ax4.set_xlabel('Epoch')
+        ax4.set_ylabel('Specificity')
+        ax4.legend()
+        ax4.grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+
+def main():
+    # Load and preprocess data
+    df = pd.read_csv("heart-disease.csv")
+    X = df.iloc[:, :-1].values
+    y = df.iloc[:, -1].values.reshape(-1, 1).astype(float)
+    
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
+    
+    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Create base configuration
+    base_config = ModelConfig(input_size=x_train.shape[1])
+    
+    # Define expanded parameter grid for optimization
+    param_grid = {
+        'hidden_size': [5, 7, 10, 15],  # Added more hidden layer sizes
+        'learning_rate': [0.001, 0.01, 0.1],
+        'batch_size': [32, 64, 128],
+        'epochs': [300, 500, 700]  # Testing different epoch lengths
+    }
+    
+    # Initialize optimizer
+    optimizer = ModelOptimizer(base_config)
+    
+    # Generate and evaluate configurations
+    configs = optimizer.generate_configs(param_grid)
+    results_df = optimizer.train_and_evaluate(configs, x_train, y_train, x_test, y_test)
+    
+    # Visualize results
+    visualizer = Visualizer()
+    visualizer.plot_optimization_results(results_df)
+    
+    # Print best configuration
+    best_result = results_df.loc[results_df['test_accuracy'].idxmax()]
+    print("\nBest configuration:")
+    print("-" * 30)
+    for column in ['hidden_size', 'learning_rate', 'batch_size', 'epochs']:
+        print(f"{column}: {best_result[column]}")
+    print("\nBest performance metrics:")
+    print("-" * 30)
+    for metric in ['test_accuracy', 'test_sensitivity', 'test_specificity', 'test_loss']:
+        print(f"{metric}: {best_result[metric]:.4f}")
+    
+    # Train a model with the best configuration and plot its history
+    best_config = ModelConfig(
+        input_size=x_train.shape[1],
+        hidden_size=int(best_result['hidden_size']),
+        learning_rate=best_result['learning_rate'],
+        batch_size=int(best_result['batch_size']),
+        epochs=int(best_result['epochs'])
+    )
+    
+    best_model = NeuralNetwork(best_config)
+    best_model.train(x_train, y_train, x_test, y_test)
+    visualizer.plot_best_model_history(best_model)
+
+if __name__ == "__main__":
+    main()
+    
+    
+# %%
+#######
+#######
+#######
+# %%
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+from typing import Dict, Tuple, List
+import itertools
+from copy import deepcopy
+
+class ModelConfig:
+    def __init__(self, input_size=None, hidden_size=5, output_size=1, 
+                 learning_rate=0.01, batch_size=128, epochs=500, random_seed=42):
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.random_seed = random_seed
+
+class ModelOptimizer:
+    def __init__(self, base_config: ModelConfig):
+        self.base_config = base_config
+        self.results = []
+    
+    def generate_configs(self, param_grid: Dict[str, List]) -> List[ModelConfig]:
+        configs = []
+        keys = param_grid.keys()
+        values = param_grid.values()
+        
+        for instance in itertools.product(*values):
+            config = deepcopy(self.base_config)
+            for key, value in zip(keys, instance):
+                setattr(config, key, value)
+            configs.append(config)
+        
+        return configs
+    
+    def train_and_evaluate(self, configs: List[ModelConfig], 
+                          x_train: np.ndarray, y_train: np.ndarray,
+                          x_test: np.ndarray, y_test: np.ndarray) -> pd.DataFrame:
+        for idx, config in enumerate(configs):
+            print(f"\nTraining configuration {idx + 1}/{len(configs)}:")
+            print(f"Hidden size: {config.hidden_size}")
+            print(f"Learning rate: {config.learning_rate}")
+            print(f"Batch size: {config.batch_size}")
+            print(f"Epochs: {config.epochs}")  # Added logging to track epochs
+
+            model = NeuralNetwork(config)
+            model.train(x_train, y_train, x_test, y_test)
+            
+            # ✅ Ensure epochs are stored properly
+            result = {
+                'hidden_size': config.hidden_size,
+                'learning_rate': config.learning_rate,
+                'batch_size': config.batch_size,
+                'epochs': config.epochs,  # Ensure this is included
+                **{k: v[-1] for k, v in model.training_history.items()}
+            }
+            self.results.append(result)
+        
+        results_df = pd.DataFrame(self.results)
+
+        # ✅ Debugging Step: Print available columns
+        print("\nAvailable Columns in results_df:", results_df.columns)
+
+        return results_df
+
+def main():
+    # Load and preprocess data
+    df = pd.read_csv("heart-disease.csv")
+    X = df.iloc[:, :-1].values
+    y = df.iloc[:, -1].values.reshape(-1, 1).astype(float)
+    
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
+    
+    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Create base configuration
+    base_config = ModelConfig(input_size=x_train.shape[1])
+    
+    # Define expanded parameter grid for optimization
+    param_grid = {
+        'hidden_size': [5, 7, 10, 15],  # Added more hidden layer sizes
+        'learning_rate': [0.001, 0.01, 0.1],
+        'batch_size': [32, 64, 128],
+        'epochs': [300, 500, 700]  # Testing different epoch lengths
+    }
+    
+    # Initialize optimizer
+    optimizer = ModelOptimizer(base_config)
+    
+    # Generate and evaluate configurations
+    configs = optimizer.generate_configs(param_grid)
+    results_df = optimizer.train_and_evaluate(configs, x_train, y_train, x_test, y_test)
+    
+    # ✅ Debugging Step: Ensure 'epochs' column exists before using it
+    if 'epochs' not in results_df.columns:
+        print("⚠️ Warning: 'epochs' column is missing from results_df! Fixing it...")
+        results_df['epochs'] = base_config.epochs  # Assign default value
+
+    # ✅ Selecting the best model safely
+    best_result = results_df.loc[results_df['test_accuracy'].idxmax()]
+    print("\nBest configuration:")
+    print("-" * 30)
+    for column in ['hidden_size', 'learning_rate', 'batch_size', 'epochs']:
+        print(f"{column}: {best_result[column]}")
+    print("\nBest performance metrics:")
+    print("-" * 30)
+    for metric in ['test_accuracy', 'test_sensitivity', 'test_specificity', 'test_loss']:
+        print(f"{metric}: {best_result[metric]:.4f}")
+    
+    # Train a model with the best configuration and plot its history
+    best_config = ModelConfig(
+        input_size=x_train.shape[1],
+        hidden_size=int(best_result['hidden_size']),
+        learning_rate=best_result['learning_rate'],
+        batch_size=int(best_result['batch_size']),
+        epochs=int(best_result['epochs'])
+    )
+    
+    best_model = NeuralNetwork(best_config)
+    best_model.train(x_train, y_train, x_test, y_test)
+
+if __name__ == "__main__":
+    main()
+
+# %%
