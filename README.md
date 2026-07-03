@@ -1,4 +1,4 @@
-WildCapture 🦔🐿️
+WildCapture 🦔
 
 Wildlife Video Capture Using Raspberry Pi and OpenCV
 BSc Computer Science Final Year Project — Jordan Barbour, Queen's University Belfast (2025)
@@ -140,10 +140,10 @@ Offline-first mode with local sync
 Project Structure
 
 wildCapture/
-├── main_motion.py          # Application entry point
-├── app_controller.py       # WildlifeController — coordinates all components
-├── animal_detector.py      # AnimalDetector — YOLOv8 inference
-├── detection_worker.py     # Background detection thread
+- main_motion.py          # Application entry point
+- app_controller.py       # WildlifeController — coordinates all components
+- animal_detector.py      # AnimalDetector — YOLOv8 inference
+- detection_worker.py     # Background detection thread
 ├── integrated_camera.py    # Camera + PIR motion sensor integration
 ├── email_notifier.py       # Gmail API notification system
 ├── storage_manager.py      # Google Cloud Storage integration
