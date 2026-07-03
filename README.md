@@ -144,15 +144,15 @@ wildCapture/
 - app_controller.py       # WildlifeController — coordinates all components
 - animal_detector.py      # AnimalDetector — YOLOv8 inference
 - detection_worker.py     # Background detection thread
-├── integrated_camera.py    # Camera + PIR motion sensor integration
-├── email_notifier.py       # Gmail API notification system
-├── storage_manager.py      # Google Cloud Storage integration
-├── timelapse_manager.py    # Timelapse capture and generation
-├── detection_logger.py     # CSV logging and analytics
-├── templates/              # Flask HTML templates
-├── static/                 # CSS, JS assets
-├── test_cases/             # Unit and integration tests
-└── models/                 # YOLOv8 model weights
+- integrated_camera.py    # Camera + PIR motion sensor integration
+- email_notifier.py       # Gmail API notification system
+- storage_manager.py      # Google Cloud Storage integration
+- timelapse_manager.py    # Timelapse capture and generation
+- detection_logger.py     # CSV logging and analytics
+- templates/              # Flask HTML templates
+- static/                 # CSS, JS assets
+- test_cases/             # Unit and integration tests
+- models/                 # YOLOv8 model weights
 
 
 Acknowledgements
